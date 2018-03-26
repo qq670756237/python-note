@@ -1,0 +1,117 @@
+#!/usr/bin/python
+# -*- coding: UTF-8 -*-
+import re, forecast
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+#获得输入文件所含参数，包括：物理服务器CPU核数，物理服务器内存大小，虚拟机规格数量，
+#虚拟机类型集合，与其对应的CPU数和内存大小集合，需要分配资源的类型（CPU还是内存）和预测时间段
+def LoadInputFile(file_name):
+    input_file = open(file_name)
+
+    physical_server_parameters = input_file.readline()
+    physical_server_parameters = re.split('\s', physical_server_parameters)[0:2]
+    input_file.readline()
+
+    flavor_type_num = int(input_file.readline())
+    flavor_set = []
+    predict_time = []
+
+    for i in range(flavor_type_num):
+        flavor_set.append(re.split('\s', input_file.readline())[0:3])
+    input_file.readline()
+
+    consider_type = input_file.readline()
+    input_file.readline()
+    for i in range(2):
+        predict_time.append(re.split('\s', input_file.readline())[0:2])
+
+    return physical_server_parameters, flavor_type_num, flavor_set, predict_time
+
+#获得训练/测试数据的flavor和时间数据
+def LoadData(file_name):
+    file_data = open(file_name)
+
+    file_data = file_data.readlines()
+    for i in range(file_data.__len__()):
+        file_data[i] = re.split('\s', file_data[i])[1:3]
+
+    return file_data
+
+#对获得的训练/测试数据进行处理并输出总览结果
+def ManipulationData(data, flavor_type_num, flavor_set):
+    time_summary = []
+    information_summary = []
+    date = data[0][1]
+    count = [0] * flavor_type_num
+
+    for i in range(data.__len__()):
+        if i == data.__len__() - 1:
+            for j in range(flavor_type_num):
+                if data[i][0] == flavor_set[j][0]:
+                    count[j] += 1
+            date = data[i][1]
+            time_summary.append(date)
+            information_summary.append(count)
+
+        elif i != data.__len__() and data[i][1] != date:
+            time_summary.append(date)
+            information_summary.append(count)
+            count = [0] * flavor_type_num
+            date = data[i][1]
+            for j in range(flavor_type_num):
+                if data[i][0] == flavor_set[j][0]:
+                    count[j] += 1
+
+        else:
+            for j in range(flavor_type_num):
+                if data[i][0] == flavor_set[j][0]:
+                    count[j] += 1
+
+    #处理完毕，开始打印总览结果
+    for i in range(time_summary.__len__()):
+        print time_summary[i] + ':',
+        for j in range(flavor_type_num):
+            print 'flavor' + str(j + 1) + ':',  information_summary[i][j],
+        print ''
+
+    return time_summary, information_summary
+if __name__ == '__main__':
+    physical_server_parameters, flavor_type_num, flavor_set, predict_time = LoadInputFile('input_5flavors_cpu_7days.txt')
+
+    train_data = LoadData('TrainData_2015.1.1_2015.2.19.txt')
+    print 'train_data'
+    train_time_summary, train_information_summary = ManipulationData(train_data, flavor_type_num, flavor_set)
+
+    test_data = LoadData('TestData_2015.2.20_2015.2.27.txt')
+    print '\ntest_data'
+    test_time_summary, test_information_summary = ManipulationData(test_data, flavor_type_num, flavor_set)
+
+    sum = 0
+    for i in range(flavor_set.__len__()):#列表推导式
+        sum = sum + int(flavor_set[i][1])
+    print sum
+
+    train_information_summary = np.array(train_information_summary)
+    train_information_split = np.vsplit(train_information_summary, train_information_summary.__len__()/7)
+    for i in range(train_information_split.__len__()):
+        train_information_split[i] = (train_information_split[i].sum(axis=0))
+
+    train_information_per7days = []
+    mid = []
+    [mid.append(i) for i in range(train_information_split.__len__())]#列表推导式
+
+    for i in range(flavor_type_num):
+        for j in range(train_information_split.__len__()):
+            mid[j] = train_information_split[j][i]
+        train_information_per7days.append(list(mid))#append添加的是参数地址，若append不断修改的某个参数，你只能得到最后的修改值
+                                                    #这里在mid前加了list创建了一个新的list object，地址就不会冲突了
+    x = range(train_information_split.__len__())
+
+    plt.figure(1)
+    [plt.plot(x, train_information_per7days[i], label = 'flavor' + str(i + 1)) for i in range(train_information_per7days.__len__())]
+    plt.legend()#为了显示标签等属性在plt.show前一定要加上plt.legend
+    plt.show()
+
+    forecast.ForecastVirtualMachineNumber(train_time_summary, train_information_summary, flavor_type_num)
